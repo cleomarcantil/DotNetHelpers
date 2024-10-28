@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.12.35417.141 d17.12
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNetHelpers.DynamicData", "DotNetHelpers.DynamicData\DotNetHelpers.DynamicData.csproj", "{9BF7AD2F-5B4C-4064-9941-9533E28859C8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DynamicData", "DynamicData", "{9FB7BA4A-197F-4076-B50E-A7D49F4CFD0C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNetHelpers.DynamicData.Tests", "DotNetHelpers.DynamicData.Tests\DotNetHelpers.DynamicData.Tests.csproj", "{B58F6C3F-C8EF-45CE-8AD1-F9AF49A67E84}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9BF7AD2F-5B4C-4064-9941-9533E28859C8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9BF7AD2F-5B4C-4064-9941-9533E28859C8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9BF7AD2F-5B4C-4064-9941-9533E28859C8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9BF7AD2F-5B4C-4064-9941-9533E28859C8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B58F6C3F-C8EF-45CE-8AD1-F9AF49A67E84}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B58F6C3F-C8EF-45CE-8AD1-F9AF49A67E84}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B58F6C3F-C8EF-45CE-8AD1-F9AF49A67E84}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B58F6C3F-C8EF-45CE-8AD1-F9AF49A67E84}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{9BF7AD2F-5B4C-4064-9941-9533E28859C8} = {9FB7BA4A-197F-4076-B50E-A7D49F4CFD0C}
+		{B58F6C3F-C8EF-45CE-8AD1-F9AF49A67E84} = {9FB7BA4A-197F-4076-B50E-A7D49F4CFD0C}
+	EndGlobalSection
+EndGlobal
