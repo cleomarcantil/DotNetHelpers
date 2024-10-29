@@ -54,16 +54,40 @@ public sealed class DynamicValuesCollectionBaseTest
     }    
     
     [TestMethod]
-    public void Atualizar_valor_existente_e_pegar_de_volta_deve_ser_o_mesmo()
+    public void Definir_valor_nulo_e_pegar_de_volta_deve_ser_nulo()
     {
-        const int VALOR_TESTE = 99;
+        var values = new DynamicValuesCollection(new(), false);
+
+        values["x"] = null;
+        var x = values["x"];
+
+        Assert.IsNull(x);
+    }    
+    
+    [TestMethod]
+    public void Atualizar_valor_com_nulo_deve_remover_decrementando_Count()
+    {
+        var values = new DynamicValuesCollection(new(), false);
+
+        values["x"] = 51;
+        values["y"] = 52;
+        values["z"] = 52;
+
+        Assert.AreEqual(3, values.Count);
+        values["x"] = null;
+        Assert.AreEqual(2, values.Count);
+    }
+    
+    [TestMethod]
+    public void Atualizar_valor_existente_com_nulo_e_pegar_de_volta_deve_ser_o_mesmo()
+    {
         var values = new DynamicValuesCollection(new(), false);
 
         values["x"] = 55;
-        values["x"] = VALOR_TESTE;
+        values["x"] = null;
         var x = values["x"];
 
-        Assert.AreEqual(VALOR_TESTE, x);
+        Assert.IsNull(x);
     }
     
     [TestMethod]

@@ -21,7 +21,7 @@ public abstract class DynamicValuesCollectionBase<T>(bool keepNulls)
                 return;
             }
 
-            sourceDic[name] = value;
+            sourceDic[name] = value!;
         }
     }
 
