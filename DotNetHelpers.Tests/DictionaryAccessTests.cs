@@ -58,7 +58,7 @@ public sealed class DictionaryAccessTests
     }
 
     [TestMethod]
-    public void Pegar_valor_de_nome_deve_ser_o_mesmo_no_dicionario()
+    public void Pegar_valor_de_nome_deve_ser_o_mesmo_do_dicionario()
     {
         const int VALOR_TESTE = 99;
         Dictionary<string, object> sourceDic = new()
@@ -73,7 +73,7 @@ public sealed class DictionaryAccessTests
     }
 
     [TestMethod]
-    public void Definir_valores_e_enumerar_deve_corresponder()
+    public void Enumerar_deve_corresponder_ao_dicionario_origem()
     {
         Dictionary<string, object> sourceDic = new()
         {
