@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 
 namespace DotNetHelpers.Notification;
 
-public class NotifyChangesDebounce<TKey, TValue>(int interval) : IDisposable
+public class DebounceChangeNotifier<TKey, TValue>(int interval) : IDisposable
 {
     private readonly ConcurrentDictionary<TKey, TValue> _changes = new();
     private readonly ConcurrentDictionary<string, ChangedCallback> _monitors = new();
