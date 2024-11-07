@@ -1,49 +1,33 @@
 ﻿using System.Collections;
 using System.Collections.Concurrent;
+using System.Threading;
 
 namespace DotNetHelpers.Notification;
 
-public class DebounceChangeNotifier<TKey, TValue>(int interval) : IDisposable
+public class DebounceChangeNotifier<TKey, TValue> : IDisposable
+    where TKey : notnull
 {
-    private readonly ConcurrentDictionary<TKey, TValue> _changes = new();
-    private readonly ConcurrentDictionary<string, ChangedCallback> _monitors = new();
+    private readonly int _interval;
+    private readonly ChangesDictionary _changes;
+    private readonly TaskExecutor _taskExecutor;
 
-    private object _changedLock = new();
-    private DateTime? _lastChangedTime;
+    private readonly ConcurrentDictionary<string, ChangedCallback> _monitors;
 
-    private readonly object _monitoringTaskLock = new();
-    private Task? _monitoringTask;
-    private CancellationTokenSource _monitoringTaskToken = new();
+    public DebounceChangeNotifier(int interval)
+    {
+        _interval = interval;
+        _changes = new();
+        _taskExecutor = new(RunMonitoring);
+        _monitors = new();
+    }
 
     public void Dispose()
     {
-        _monitoringTaskToken.Cancel();
-        _monitoringTaskToken.Dispose();
+        _taskExecutor.Dispose();
     }
 
     public void NotifyChanged(TKey key, TValue value)
-    {
-        lock (_changedLock)
-        {
-            _changes.AddOrUpdate(key, (_) => value, (_, _) => value);
-            _lastChangedTime = DateTime.Now;
-        }
-    }
-
-    private InternalChangesAccess? ExtractChangesToNotify()
-    {
-        lock (_changedLock)
-        {
-            if (_lastChangedTime is null)
-                return null;
-            
-            var changesToNotify = _changes.ToArray();
-            _changes.Clear();
-            _lastChangedTime = null;
-
-            return new InternalChangesAccess(changesToNotify);
-        }
-    }
+        => _changes.Add(key, value);
 
     public async Task Monitore(ChangedCallback changedCallback, CancellationToken cancellationToken)
     {
@@ -51,13 +35,13 @@ public class DebounceChangeNotifier<TKey, TValue>(int interval) : IDisposable
 
         if (_monitors.TryAdd(monitorKey, changedCallback))
         {
-            EnsureStartedMonitoringTask();
+            _taskExecutor.EnsureStarted();
 
             while (!cancellationToken.IsCancellationRequested)
             {
                 try
                 {
-                    await Task.Delay(interval, cancellationToken);
+                    await Task.Delay(_interval, cancellationToken);
                 }
                 catch (Exception)
                 {
@@ -68,31 +52,13 @@ public class DebounceChangeNotifier<TKey, TValue>(int interval) : IDisposable
         }
     }
 
-    private void EnsureStartedMonitoringTask()
+    private async Task RunMonitoring(CancellationToken cts)
     {
-        lock (_monitoringTaskLock)
+        while (!_monitors.IsEmpty && !cts.IsCancellationRequested)
         {
-            if (_monitoringTask is null)
-            {
-                _monitoringTask = RunMonitoring(
-                    onComplete: () =>
-                    {
-                        lock (_monitoringTaskLock)
-                        {
-                            _monitoringTask = null;
-                        }
-                    });
-            }
-        }
-    }
+            await Task.Delay(_interval, cts);
 
-    private async Task RunMonitoring(Action onComplete)
-    {
-        while (!_monitors.IsEmpty && !_monitoringTaskToken.IsCancellationRequested)
-        {
-            await Task.Delay(interval, _monitoringTaskToken.Token);
-
-            if (ExtractChangesToNotify() is { Count: > 0 } changesToNotify)
+            if (_changes.Extract() is { Count: > 0 } changesToNotify)
             {
                 foreach (var (_, callback) in _monitors)
                 {
@@ -106,16 +72,48 @@ public class DebounceChangeNotifier<TKey, TValue>(int interval) : IDisposable
                 }
             }
         }
-
-        onComplete.Invoke();
     }
 
     public delegate Task ChangedCallback(IReadOnlyCollection<(TKey key, TValue value)> changes);
 
-    private class InternalChangesAccess(KeyValuePair<TKey, TValue>[]? changes) 
+
+    #region Internal
+
+    class ChangesDictionary
+    {
+        private readonly ConcurrentDictionary<TKey, TValue> _changes = new();
+        private DateTime? _lastChangedTime;
+        private object _accessLock = new();
+
+        public void Add(TKey key, TValue value)
+        {
+            lock (_accessLock)
+            {
+                _changes.AddOrUpdate(key, (_) => value, (_, _) => value);
+                _lastChangedTime = DateTime.Now;
+            }
+        }
+
+        public ChangesAccessor? Extract()
+        {
+            lock (_accessLock)
+            {
+                if (_lastChangedTime is null)
+                    return null;
+
+                var changesToNotify = _changes.ToArray();
+                _changes.Clear();
+                _lastChangedTime = null;
+
+                return new ChangesAccessor(changesToNotify);
+            }
+        }
+    }
+
+    class ChangesAccessor(KeyValuePair<TKey, TValue>[]? changes)
         : IReadOnlyCollection<(TKey key, TValue value)>
     {
-        public int Count 
+        public int Count
             => (changes?.Length ?? 0);
 
         public IEnumerator<(TKey key, TValue value)> GetEnumerator()
@@ -124,4 +122,48 @@ public class DebounceChangeNotifier<TKey, TValue>(int interval) : IDisposable
         IEnumerator IEnumerable.GetEnumerator()
             => this.GetEnumerator();
     }
+
+    class TaskExecutor(TaskExecutorAction action) : IDisposable
+    {
+        private Task? _task = null;
+        private CancellationTokenSource? _cancelationTokenSource;
+        private readonly object _taskLock = new();
+
+        public void Dispose()
+        {
+            _cancelationTokenSource?.Cancel();
+            _cancelationTokenSource?.Dispose();
+        }
+
+        public void EnsureStarted()
+        {
+            lock (_taskLock)
+            {
+                if (_task != null)
+                    return;
+
+                _cancelationTokenSource = new();
+                _task = Task.Run(async () =>
+                {
+                    await action.Invoke(_cancelationTokenSource.Token);
+                    Stop();
+                });
+            }
+        }
+
+        public void Stop()
+        {
+            lock (_taskLock)
+            {
+                _cancelationTokenSource?.Cancel();
+                _cancelationTokenSource?.Dispose();
+                _cancelationTokenSource = null;
+                _task = null;
+            }
+        }
+    }
+
+    delegate Task TaskExecutorAction(CancellationToken cancellationToken);
+
+    #endregion
 }
