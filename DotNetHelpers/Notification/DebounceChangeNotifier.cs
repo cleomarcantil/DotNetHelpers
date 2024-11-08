@@ -1,6 +1,5 @@
 ﻿using System.Collections;
 using System.Collections.Concurrent;
-using System.Threading;
 
 namespace DotNetHelpers.Notification;
 
@@ -10,72 +9,61 @@ public class DebounceChangeNotifier<TKey, TValue> : IDisposable
     private readonly int _interval;
     private readonly ChangesDictionary _changes;
     private readonly TaskExecutor _taskExecutor;
-
-    private readonly ConcurrentDictionary<string, ChangedCallback> _monitors;
+    private readonly ChangesObservers<IDebounceChangeObserver<TKey, TValue>> _observers;
 
     public DebounceChangeNotifier(int interval)
     {
         _interval = interval;
         _changes = new();
-        _taskExecutor = new(RunMonitoring);
-        _monitors = new();
+        _taskExecutor = new(OnMonitoring);
+        _observers = new();
     }
 
     public void Dispose()
-    {
-        _taskExecutor.Dispose();
-    }
+        => _taskExecutor.Dispose();
 
     public void NotifyChanged(TKey key, TValue value)
         => _changes.Add(key, value);
 
-    public async Task Monitore(ChangedCallback changedCallback, CancellationToken cancellationToken)
+    private async Task OnMonitoring(CancellationToken cancelationToken)
     {
-        var monitorKey = Guid.NewGuid().ToString();
-
-        if (_monitors.TryAdd(monitorKey, changedCallback))
+        while (!_observers.IsEmpty && !cancelationToken.IsCancellationRequested)
         {
-            _taskExecutor.EnsureStarted();
-
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                try
-                {
-                    await Task.Delay(_interval, cancellationToken);
-                }
-                catch (Exception)
-                {
-                }
-            }
-
-            _monitors.TryRemove(monitorKey, out var _);
-        }
-    }
-
-    private async Task RunMonitoring(CancellationToken cts)
-    {
-        while (!_monitors.IsEmpty && !cts.IsCancellationRequested)
-        {
-            await Task.Delay(_interval, cts);
+            await Task.Delay(_interval, cancelationToken);
 
             if (_changes.Extract() is { Count: > 0 } changesToNotify)
-            {
-                foreach (var (_, callback) in _monitors)
-                {
-                    try
-                    {
-                        await callback.Invoke(changesToNotify);
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            }
+                await _observers.Notify(changesToNotify, cancelationToken);
         }
     }
 
-    public delegate Task ChangedCallback(IReadOnlyCollection<(TKey key, TValue value)> changes);
+    public void AddObserver(IDebounceChangeObserver<TKey, TValue> observer)
+    {
+        _observers.Add(observer);
+        _taskExecutor.EnsureStarted();
+    }
 
+    public void RemoveObserver(IDebounceChangeObserver<TKey, TValue> observer)
+        => _observers.Remove(observer);
+
+    public async Task Watch(ChangedCallback changedCallback, CancellationToken cancellationToken)
+    {
+        InternalCallbackObserver transientObserver = new(changedCallback);
+
+        AddObserver(transientObserver);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(_interval, cancellationToken);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        RemoveObserver(transientObserver);
+    }
 
     #region Internal
 
@@ -165,5 +153,77 @@ public class DebounceChangeNotifier<TKey, TValue> : IDisposable
 
     delegate Task TaskExecutorAction(CancellationToken cancellationToken);
 
+    class ChangesObservers<TObserver>
+        where TObserver : IDebounceChangeObserver<TKey, TValue>
+    {
+        private readonly HashSet<TObserver> _observers = new();
+        private readonly object _lockObservers = new();
+
+        public void Add(TObserver observer)
+        {
+            lock (_lockObservers)
+            {
+                _observers.Add(observer);
+            }
+        }
+
+        public void Remove(TObserver observer)
+        {
+            lock (_lockObservers)
+            {
+                _observers.Remove(observer);
+            }
+        }
+
+        public bool IsEmpty
+        {
+            get
+            {
+                lock (_lockObservers)
+                {
+                    return (_observers.Count == 0);
+                }
+            }
+        }
+
+        private TObserver[] GetObservers()
+        {
+            lock (_lockObservers)
+            {
+                return _observers.ToArray();
+            }
+        }
+
+        public async Task Notify(ChangesAccessor changes, CancellationToken cancellationToken)
+        {
+            foreach (var observer in GetObservers())
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    break;
+
+                try
+                {
+                    await observer.OnChanged(changes, cancellationToken);
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+    }
+
+    class InternalCallbackObserver(ChangedCallback callback) : IDebounceChangeObserver<TKey, TValue>
+    {
+        public async Task OnChanged(IReadOnlyCollection<(TKey key, TValue value)> changes, CancellationToken cancellationToken)
+            => await callback.Invoke(changes);
+    }
+
     #endregion
+
+    public delegate Task ChangedCallback(IReadOnlyCollection<(TKey key, TValue value)> changes);
+}
+
+public interface IDebounceChangeObserver<TKey, TValue>
+{
+    Task OnChanged(IReadOnlyCollection<(TKey key, TValue value)> changes, CancellationToken cancellationToken);
 }
