@@ -7,7 +7,7 @@ public class DebounceChangeNotifier<TKey, TValue> : IDisposable
     where TKey : notnull
 {
     private readonly int _interval;
-    private readonly ChangesDictionary _changes;
+    private readonly ChangesRepository _changes;
     private readonly TaskExecutor _taskExecutor;
     private readonly ChangesObservers<IDebounceChangeObserver<TKey, TValue>> _observers;
 
@@ -47,7 +47,7 @@ public class DebounceChangeNotifier<TKey, TValue> : IDisposable
 
     public async Task Watch(ChangedCallback changedCallback, CancellationToken cancellationToken)
     {
-        InternalCallbackObserver transientObserver = new(changedCallback);
+        WatchCallbackObserver transientObserver = new(changedCallback);
 
         AddObserver(transientObserver);
 
@@ -67,7 +67,7 @@ public class DebounceChangeNotifier<TKey, TValue> : IDisposable
 
     #region Internal
 
-    class ChangesDictionary
+    class ChangesRepository
     {
         private readonly ConcurrentDictionary<TKey, TValue> _changes = new();
         private DateTime? _lastChangedTime;
@@ -82,23 +82,23 @@ public class DebounceChangeNotifier<TKey, TValue> : IDisposable
             }
         }
 
-        public ChangesAccessor? Extract()
+        public ChangesCollected? Extract()
         {
             lock (_accessLock)
             {
-                if (_lastChangedTime is null)
+                if (_lastChangedTime is null || _changes.IsEmpty)
                     return null;
-
+                
                 var changesToNotify = _changes.ToArray();
                 _changes.Clear();
                 _lastChangedTime = null;
 
-                return new ChangesAccessor(changesToNotify);
+                return new ChangesCollected(changesToNotify);
             }
         }
     }
 
-    class ChangesAccessor(KeyValuePair<TKey, TValue>[]? changes)
+    class ChangesCollected(KeyValuePair<TKey, TValue>[]? changes)
         : IReadOnlyCollection<(TKey key, TValue value)>
     {
         public int Count
@@ -118,10 +118,7 @@ public class DebounceChangeNotifier<TKey, TValue> : IDisposable
         private readonly object _taskLock = new();
 
         public void Dispose()
-        {
-            _cancelationTokenSource?.Cancel();
-            _cancelationTokenSource?.Dispose();
-        }
+            => Terminate();
 
         public void EnsureStarted()
         {
@@ -134,12 +131,12 @@ public class DebounceChangeNotifier<TKey, TValue> : IDisposable
                 _task = Task.Run(async () =>
                 {
                     await action.Invoke(_cancelationTokenSource.Token);
-                    Stop();
+                    Terminate();
                 });
             }
         }
 
-        public void Stop()
+        private void Terminate()
         {
             lock (_taskLock)
             {
@@ -194,7 +191,7 @@ public class DebounceChangeNotifier<TKey, TValue> : IDisposable
             }
         }
 
-        public async Task Notify(ChangesAccessor changes, CancellationToken cancellationToken)
+        public async Task Notify(ChangesCollected changes, CancellationToken cancellationToken)
         {
             foreach (var observer in GetObservers())
             {
@@ -212,7 +209,7 @@ public class DebounceChangeNotifier<TKey, TValue> : IDisposable
         }
     }
 
-    class InternalCallbackObserver(ChangedCallback callback) : IDebounceChangeObserver<TKey, TValue>
+    class WatchCallbackObserver(ChangedCallback callback) : IDebounceChangeObserver<TKey, TValue>
     {
         public async Task OnChanged(IReadOnlyCollection<(TKey key, TValue value)> changes, CancellationToken cancellationToken)
             => await callback.Invoke(changes);
