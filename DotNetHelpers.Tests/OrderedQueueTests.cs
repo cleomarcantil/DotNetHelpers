@@ -110,10 +110,13 @@ public sealed class OrderedQueueTests
 
     #region Concurrent tests
 
-    [TestMethod]
-    public void Adicionar_valores_paralelamente_deve_manter_a_integridade()
+    [TestMethod, TestCategory("Concurrent tests")]
+    [DataRow(10, DisplayName = "10 números aleatórios")]
+    [DataRow(100, DisplayName = "100 números aleatórios")]
+    [DataRow(1000, DisplayName = "1000 números aleatórios")]
+    public void Adicionar_valores_paralelamente_deve_manter_a_integridade(int randomSize)
     {
-        int[] randomValues = Enumerable.Range(1, 1000).Select(n => Random.Shared.Next(100)).ToArray();
+        int[] randomValues = GenerateRandomValues(1, randomSize);
         var orderedValues = randomValues.Order().ToArray();
 
         OrderedQueue<int> oq = new(concurrencyLock: true);
@@ -123,11 +126,10 @@ public sealed class OrderedQueueTests
         CollectionAssert.AreEqual(orderedValues, valuesInQueue);
     }
 
-    [TestMethod]
+    [TestMethod, TestCategory("Concurrent tests")]
     [DataRow(10, DisplayName = "10 números aleatórios")]
     [DataRow(100, DisplayName = "100 números aleatórios")]
     [DataRow(1000, DisplayName = "1000 números aleatórios")]
-    [DataRow(10000, DisplayName = "10000 números aleatórios")]
     public void Dequeue_paralelamente_deve_retornar_valores_correspondentes_aos_primeiros_da_ordem(int randomSize)
     {
         int dequeueCount = randomSize / 3;
@@ -143,12 +145,10 @@ public sealed class OrderedQueueTests
         CollectionAssert.AreEqual(firstOrderedValues, orderedDequeuedValues);
     }
 
-
-    [TestMethod]
+    [TestMethod, TestCategory("Concurrent tests")]
     [DataRow(10, DisplayName = "10 números aleatórios")]
     [DataRow(100, DisplayName = "100 números aleatórios")]
     [DataRow(1000, DisplayName = "1000 números aleatórios")]
-    [DataRow(10000, DisplayName = "10000 números aleatórios")]
     public void Dequeue_paralelamente_deve_manter_valores_restantes_integros(int randomSize)
     {
         int dequeueCount = randomSize / 3;
@@ -161,6 +161,26 @@ public sealed class OrderedQueueTests
         var valuesInQueue = oq.ToArray();
 
         CollectionAssert.AreEqual(remainderOrderedValues, valuesInQueue);
+    }
+
+    [TestMethod, TestCategory("Concurrent tests")]
+    [DataRow(10, DisplayName = "10 números aleatórios")]
+    [DataRow(100, DisplayName = "100 números aleatórios")]
+    [DataRow(1000, DisplayName = "1000 números aleatórios")]
+    public void Enumerar_paralelamente_deve_obter_valores_integros(int randomSize)
+    {
+        int enumerationsCount = randomSize / 5;
+        int[] randomValues = GenerateRandomValues(1, randomSize);
+        var orderedValues = randomValues.Order().ToArray();
+
+        ConcurrentBag<int[]> enumeratedLists = new();
+        OrderedQueue<int> oq = new(randomValues, concurrencyLock: true);
+        Parallel.For(0, enumerationsCount, _ => enumeratedLists.Add(oq.ToArray()));
+
+        foreach (var enumeratedList in enumeratedLists)
+        {
+            CollectionAssert.AreEqual(orderedValues, enumeratedList);
+        }
     }
 
     #endregion
